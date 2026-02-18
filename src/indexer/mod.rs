@@ -66,6 +66,9 @@ pub struct ImportInfo {
     pub path: String,
     pub alias: Option<String>,
     pub is_wildcard: bool,
+    pub line: usize,
+    pub column: usize,
+    pub byte_range: std::ops::Range<usize>,
 }
 
 #[derive(Debug, Clone)]

@@ -134,9 +134,9 @@ fn parse_file(
             fqn: Some(imp.path.clone()),
             kind: SymbolKind::Import,
             file: path.to_path_buf(),
-            line: 0,
-            column: 0,
-            byte_range: 0..0,
+            line: imp.line,
+            column: imp.column,
+            byte_range: imp.byte_range.clone(),
             receiver_type: None,
         });
     }
@@ -241,6 +241,9 @@ fn parse_import_node(node: &tree_sitter::Node, src: &[u8]) -> Option<ImportInfo>
         path,
         alias,
         is_wildcard,
+        line: node.start_position().row + 1,
+        column: node.start_position().column + 1,
+        byte_range: node.byte_range(),
     })
 }
 
@@ -540,6 +543,64 @@ fn extract_references(
             // Don't recurse into type parameters - they'll be handled separately
             return;
         }
+        "simple_identifier" | "identifier" => {
+            // Bare identifier used as a value reference (e.g., passed as argument,
+            // assigned to variable). Only capture if not already handled by another case.
+            if let Some(parent) = node.parent() {
+                let pk = parent.kind();
+                let dominated = matches!(
+                    pk,
+                    // Declaration names
+                    "class_declaration"
+                        | "object_declaration"
+                        | "function_declaration"
+                        | "variable_declaration"
+                        | "parameter"
+                        | "companion_object"
+                        | "enum_entry"
+                        | "type_alias"
+                        // Import / package path components
+                        | "import"
+                        | "import_header"
+                        | "import_alias"
+                        | "import_list"
+                        | "package_header"
+                        | "qualified_identifier"
+                        // Already handled by navigation_expression / user_type
+                        | "navigation_expression"
+                        | "navigation_suffix"
+                        | "user_type"
+                        // Type parameters and annotations
+                        | "type_parameter"
+                        | "type_constraint"
+                        | "annotation"
+                        // Labels
+                        | "label"
+                );
+                if !dominated {
+                    // Also skip if this is child(0) of a call_expression (callee, already handled)
+                    let is_callee = pk == "call_expression"
+                        && parent.child(0).is_some_and(|c| c.id() == node.id());
+                    if !is_callee {
+                        let name = node_text(node, src).to_string();
+                        if !name.is_empty() {
+                            let fqn = resolve_reference(&name, package, imports);
+                            occurrences.push(SymbolOccurrence {
+                                name,
+                                fqn,
+                                kind: SymbolKind::PropertyReference,
+                                file: path.to_path_buf(),
+                                line: node.start_position().row + 1,
+                                column: node.start_position().column + 1,
+                                byte_range: node.byte_range(),
+                                receiver_type: None,
+                            });
+                        }
+                    }
+                }
+            }
+            return;
+        }
         _ => {}
     }
 
@@ -795,4 +856,5 @@ import com.util.*
         let wildcard = &file_info.imports[2];
         assert!(wildcard.is_wildcard);
     }
+
 }
