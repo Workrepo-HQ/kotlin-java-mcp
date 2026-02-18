@@ -1,0 +1,12 @@
+
+------------------------------------------------------------
+Root project 'sample-project'
+------------------------------------------------------------
+
+Root project 'sample-project'
++--- Project ':app'
++--- Project ':core'
+\--- Project ':feature'
+
+To see a list of the tasks of a project, run gradlew <project-path>:tasks
+For example, try running gradlew :app:tasks

@@ -254,15 +254,19 @@ fn build_scope_tree(root: &tree_sitter::Node, src: &[u8]) -> ScopeTree {
 fn collect_scopes(node: &tree_sitter::Node, src: &[u8], tree: &mut ScopeTree) {
     match node.kind() {
         "class_declaration"
-        | "interface_declaration"
         | "object_declaration"
         | "enum_class_body" => {
             if let Some(name) = find_child_name(node, src) {
-                tree.add_scope(name, node.byte_range());
+                // Only add scope if there's a body — no body means no nested declarations
+                if let Some(range) = find_body_range(node) {
+                    tree.add_scope(name, range);
+                }
             }
         }
         "companion_object" => {
-            tree.add_scope("Companion".to_string(), node.byte_range());
+            if let Some(range) = find_body_range(node) {
+                tree.add_scope("Companion".to_string(), range);
+            }
         }
         _ => {}
     }
@@ -286,9 +290,10 @@ fn extract_declarations(
         "class_declaration" => {
             if let Some(name) = find_child_name(node, src) {
                 let fqn = build_fqn(package, scope_tree, node.start_byte(), &name);
-                // Check if it's an enum class
-                let kind = if has_modifier(node, src, "enum") {
-                    SymbolKind::ClassDeclaration // enum classes are still class declarations
+                // tree-sitter-kotlin-ng uses class_declaration for both classes and interfaces.
+                // Check for the "interface" keyword child to distinguish them.
+                let kind = if has_keyword_child(node, "interface") {
+                    SymbolKind::InterfaceDeclaration
                 } else {
                     SymbolKind::ClassDeclaration
                 };
@@ -296,21 +301,6 @@ fn extract_declarations(
                     name: name.clone(),
                     fqn: Some(fqn),
                     kind,
-                    file: path.to_path_buf(),
-                    line: node.start_position().row + 1,
-                    column: node.start_position().column + 1,
-                    byte_range: node.byte_range(),
-                    receiver_type: None,
-                });
-            }
-        }
-        "interface_declaration" => {
-            if let Some(name) = find_child_name(node, src) {
-                let fqn = build_fqn(package, scope_tree, node.start_byte(), &name);
-                occurrences.push(SymbolOccurrence {
-                    name: name.clone(),
-                    fqn: Some(fqn),
-                    kind: SymbolKind::InterfaceDeclaration,
                     file: path.to_path_buf(),
                     line: node.start_position().row + 1,
                     column: node.start_position().column + 1,
@@ -616,6 +606,19 @@ fn build_fqn(
     }
 }
 
+fn find_body_range(node: &tree_sitter::Node) -> Option<std::ops::Range<usize>> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "class_body"
+            || child.kind() == "enum_class_body"
+            || child.kind() == "object_body"
+        {
+            return Some(child.byte_range());
+        }
+    }
+    None
+}
+
 fn find_child_name(node: &tree_sitter::Node, src: &[u8]) -> Option<String> {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -684,12 +687,11 @@ fn find_type_alias_target(node: &tree_sitter::Node, src: &[u8]) -> Option<String
     None
 }
 
-fn has_modifier(node: &tree_sitter::Node, src: &[u8], modifier: &str) -> bool {
+fn has_keyword_child(node: &tree_sitter::Node, keyword: &str) -> bool {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() == "modifiers" {
-            let text = node_text(&child, src);
-            return text.contains(modifier);
+        if child.kind() == keyword {
+            return true;
         }
     }
     false
@@ -702,6 +704,23 @@ fn node_text<'a>(node: &tree_sitter::Node, src: &'a [u8]) -> &'a str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_interface_parsing() {
+        let source = "package com.example\n\ninterface Repository<T> {\n    fun findById(id: String): T?\n}\n";
+        let file_path = std::path::PathBuf::from("Test.kt");
+        let (_, occurrences, _) = parse_file(&file_path, source);
+        let repo = occurrences
+            .iter()
+            .find(|o| o.name == "Repository")
+            .expect("Expected Repository in occurrences");
+        assert!(
+            matches!(repo.kind, super::SymbolKind::InterfaceDeclaration),
+            "Expected InterfaceDeclaration, got {:?}",
+            repo.kind
+        );
+        assert_eq!(repo.fqn.as_deref(), Some("com.example.Repository"));
+    }
 
     #[test]
     fn test_discover_files() {

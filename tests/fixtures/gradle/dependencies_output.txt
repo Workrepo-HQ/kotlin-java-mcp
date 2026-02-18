@@ -1,0 +1,17 @@
+compileClasspath - Compile classpath for source set 'main'.
++--- org.jetbrains.kotlin:kotlin-stdlib:1.9.22
+|    +--- org.jetbrains.kotlin:kotlin-stdlib-common:1.9.22
+|    \--- org.jetbrains:annotations:24.0.0
++--- com.google.code.gson:gson:2.10.1
++--- project :core
++--- org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3
+|    +--- org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.7.3
+|    |    +--- org.jetbrains.kotlin:kotlin-stdlib:1.8.20 -> 1.9.22 (*)
+|    |    \--- org.jetbrains.kotlinx:kotlinx-coroutines-bom:1.7.3
+|    \--- org.jetbrains.kotlinx:kotlinx-coroutines-bom:1.7.3
+\--- com.squareup.okhttp3:okhttp:4.12.0
+     +--- com.squareup.okio:okio:3.6.0
+     |    \--- com.squareup.okio:okio-jvm:3.6.0
+     |         +--- org.jetbrains.kotlin:kotlin-stdlib:1.9.10 -> 1.9.22 (*)
+     |         \--- org.jetbrains.kotlin:kotlin-stdlib-common:1.9.10 -> 1.9.22 (*)
+     \--- org.jetbrains.kotlin:kotlin-stdlib:1.8.21 -> 1.9.22 (*)

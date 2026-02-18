@@ -2,7 +2,7 @@ use super::{DependencyNode, GradleModule};
 
 /// Parse the output of `gradlew projects -q`.
 /// Lines look like:
-/// ```
+/// ```text
 /// Root project 'my-project'
 /// +--- Project ':app'
 /// +--- Project ':core'
@@ -34,7 +34,7 @@ pub fn parse_projects_output(output: &str) -> Vec<GradleModule> {
 
 /// Parse the output of `gradlew :module:dependencies --configuration compileClasspath -q`.
 /// Lines look like:
-/// ```
+/// ```text
 /// compileClasspath - Compile classpath for source set 'main'.
 /// +--- org.jetbrains.kotlin:kotlin-stdlib:1.9.0
 /// +--- com.google.code.gson:gson:2.10.1

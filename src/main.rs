@@ -1,9 +1,3 @@
-mod error;
-mod gradle;
-mod indexer;
-mod server;
-mod tools;
-
 use std::path::PathBuf;
 
 use clap::Parser;
@@ -34,7 +28,7 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("Starting kotlin-java-mcp server for {}", project_root.display());
 
-    let server = server::KotlinMcpServer::new(project_root);
+    let server = kotlin_java_mcp::server::KotlinMcpServer::new(project_root);
     let service = server.serve(rmcp::transport::stdio()).await?;
     service.waiting().await?;
 
