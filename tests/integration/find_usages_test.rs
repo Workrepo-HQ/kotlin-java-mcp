@@ -148,3 +148,89 @@ fn test_find_usages_bare_identifier_reference() {
         in_workflow_usage.iter().map(|o| format!("{}:{} {:?}", o.file.display(), o.line, o.kind)).collect::<Vec<_>>()
     );
 }
+
+// Helper: collect all non-import, non-declaration usages in a specific file
+fn usages_in_file<'a>(
+    results: &'a [&'a kotlin_java_mcp::indexer::SymbolOccurrence],
+    filename: &str,
+) -> Vec<&'a kotlin_java_mcp::indexer::SymbolOccurrence> {
+    results
+        .iter()
+        .filter(|o| {
+            o.file.file_name().unwrap().to_str().unwrap() == filename
+                && !matches!(o.kind, SymbolKind::Import)
+                && !o.kind.is_declaration()
+        })
+        .copied()
+        .collect()
+}
+
+// --- Navigation receivers ---
+
+#[test]
+fn test_find_usages_navigation_receiver_property_access() {
+    // `Config.maxRetries` — Config is the receiver of a navigation_expression
+    let index = build_index();
+    let results = find_usages(&index, "Config", None, None);
+
+    let in_patterns = usages_in_file(&results, "ReferencePatterns.kt");
+
+    // Config is used as receiver on two lines: Config.maxRetries and Config.getTimeout()
+    assert!(
+        in_patterns.len() >= 2,
+        "Expected at least 2 usages of Config as receiver in ReferencePatterns.kt, found {}: {:?}",
+        in_patterns.len(),
+        in_patterns.iter().map(|o| format!("line:{} {:?}", o.line, o.kind)).collect::<Vec<_>>()
+    );
+}
+
+// --- Callable references ---
+
+#[test]
+fn test_find_usages_callable_reference_bare() {
+    // `::createUser` — callable reference to a top-level function
+    let index = build_index();
+    let results = find_usages(&index, "createUser", None, None);
+
+    let in_patterns = usages_in_file(&results, "ReferencePatterns.kt");
+
+    // ::createUser appears twice: `val factory = ::createUser` and `.map(::createUser)`
+    assert!(
+        in_patterns.len() >= 2,
+        "Expected at least 2 callable reference usages of createUser in ReferencePatterns.kt, found {}: {:?}",
+        in_patterns.len(),
+        in_patterns.iter().map(|o| format!("line:{} {:?}", o.line, o.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn test_find_usages_callable_reference_qualified() {
+    // `User::toString` — qualified callable reference, User is the receiver
+    let index = build_index();
+    let results = find_usages(&index, "User", None, None);
+
+    let in_patterns = usages_in_file(&results, "ReferencePatterns.kt");
+
+    // User appears as: import, type ref in ::toString, and in callable ref `User::toString`
+    assert!(
+        !in_patterns.is_empty(),
+        "Expected User referenced in ReferencePatterns.kt (from User::toString), found none"
+    );
+}
+
+// --- Infix function calls ---
+
+#[test]
+fn test_find_usages_infix_function() {
+    // `"key" mapTo "value"` — infix call to mapTo
+    let index = build_index();
+    let results = find_usages(&index, "mapTo", None, None);
+
+    let in_patterns = usages_in_file(&results, "ReferencePatterns.kt");
+
+    assert!(
+        !in_patterns.is_empty(),
+        "Expected mapTo infix usage in ReferencePatterns.kt, found none. All results: {:?}",
+        results.iter().map(|o| format!("{}:{} {:?} {}", o.file.file_name().unwrap().to_str().unwrap(), o.line, o.kind, o.name)).collect::<Vec<_>>()
+    );
+}

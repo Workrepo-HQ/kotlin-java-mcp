@@ -459,8 +459,9 @@ fn extract_references(
                             byte_range: node.byte_range(),
                             receiver_type: extract_receiver_from_nav(&name_node, src),
                         });
-                        // Don't recurse into this call_expression's first child further
-                        // but do recurse into arguments
+                        // Process the receiver of the navigation expression
+                        extract_nav_receiver(&name_node, src, path, package, scope_tree, imports, occurrences);
+                        // Recurse into arguments (skip the navigation_expression itself)
                         let mut cursor = node.walk();
                         for child in node.children(&mut cursor) {
                             if child.id() != name_node.id() {
@@ -501,7 +502,7 @@ fn extract_references(
                     return;
                 }
             }
-            // Property access like `foo.bar`
+            // Property access like `foo.bar`, `foo?.bar`, `Foo::bar`
             let count = node.child_count();
             if count > 0 {
                 if let Some(member) = node.child(count - 1) {
@@ -520,7 +521,10 @@ fn extract_references(
                         });
                     }
                 }
+                // Process the receiver to capture it as a reference
+                extract_nav_receiver(node, src, path, package, scope_tree, imports, occurrences);
             }
+            return;
         }
         "user_type" => {
             // Type references like `: Foo` or `Foo<Bar>`
@@ -639,6 +643,42 @@ fn resolve_reference(name: &str, package: Option<&str>, imports: &[ImportInfo]) 
     }
 
     None
+}
+
+/// Process the receiver (child 0) of a navigation_expression, capturing it as a reference.
+/// For a leaf identifier receiver (e.g., `Config` in `Config.foo`), emit it directly.
+/// For a complex receiver (e.g., another navigation in `a.b.c`), recurse into it.
+fn extract_nav_receiver(
+    nav_node: &tree_sitter::Node,
+    src: &[u8],
+    path: &Path,
+    package: Option<&str>,
+    scope_tree: &ScopeTree,
+    imports: &[ImportInfo],
+    occurrences: &mut Vec<SymbolOccurrence>,
+) {
+    if let Some(receiver) = nav_node.child(0) {
+        if receiver.kind() == "simple_identifier" || receiver.kind() == "identifier" {
+            // Leaf receiver — capture directly as a reference
+            let name = node_text(&receiver, src).to_string();
+            if !name.is_empty() {
+                let fqn = resolve_reference(&name, package, imports);
+                occurrences.push(SymbolOccurrence {
+                    name,
+                    fqn,
+                    kind: SymbolKind::PropertyReference,
+                    file: path.to_path_buf(),
+                    line: receiver.start_position().row + 1,
+                    column: receiver.start_position().column + 1,
+                    byte_range: receiver.byte_range(),
+                    receiver_type: None,
+                });
+            }
+        } else {
+            // Complex receiver (e.g., nested navigation_expression, call_expression) — recurse
+            extract_references(&receiver, src, path, package, scope_tree, imports, occurrences);
+        }
+    }
 }
 
 fn extract_receiver_from_nav(nav_node: &tree_sitter::Node, src: &[u8]) -> Option<String> {
