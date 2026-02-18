@@ -234,3 +234,35 @@ fn test_find_usages_infix_function() {
         results.iter().map(|o| format!("{}:{} {:?} {}", o.file.file_name().unwrap().to_str().unwrap(), o.line, o.kind, o.name)).collect::<Vec<_>>()
     );
 }
+
+// --- Cross-reference FQN resolution ---
+
+#[test]
+fn test_find_usages_fqn_not_shadowed_by_class_method() {
+    // Regression: when a file contains a class with method `generateReport` AND a top-level
+    // call to the same-named top-level function `com.example.core.generateReport`,
+    // cross_reference should NOT override the correct FQN with the class method's FQN.
+    let index = build_index();
+
+    // Search by FQN for the top-level function
+    let results = find_usages(&index, "com.example.core.generateReport", None, None);
+
+    // The call `generateReport("test")` in useTopLevel() in ReportServiceImpl.kt
+    // should resolve to the top-level function, not to ReportServiceImpl.generateReport
+    let in_impl: Vec<_> = results
+        .iter()
+        .filter(|o| {
+            o.file.file_name().unwrap().to_str().unwrap() == "ReportServiceImpl.kt"
+                && !matches!(o.kind, SymbolKind::Import)
+                && !o.kind.is_declaration()
+        })
+        .collect();
+
+    assert!(
+        !in_impl.is_empty(),
+        "Expected a reference to top-level generateReport in ReportServiceImpl.kt, but FQN search missed it. \
+         This likely means cross_reference incorrectly reassigned the FQN to the class method. \
+         All results: {:?}",
+        results.iter().map(|o| format!("{}:{} {:?} fqn={:?}", o.file.file_name().unwrap().to_str().unwrap(), o.line, o.kind, o.fqn)).collect::<Vec<_>>()
+    );
+}

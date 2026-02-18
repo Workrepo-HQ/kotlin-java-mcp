@@ -53,7 +53,17 @@ pub fn cross_reference(index: &mut SymbolIndex) {
                     resolve_symbol_fqn(name, file_info, &declarations_by_name, &type_aliases)
                 {
                     if occ.fqn.as_deref() != Some(&resolved_fqn) {
-                        updates.push((name.clone(), idx, resolved_fqn));
+                        // Don't override a FQN that already resolves to a known declaration.
+                        // This prevents same-file class methods from shadowing a correct
+                        // top-level function FQN that was assigned during initial parsing.
+                        let current_is_valid = occ.fqn.as_ref().is_some_and(|current_fqn| {
+                            declarations_by_name.get(name).is_some_and(|decls| {
+                                decls.iter().any(|(fqn, _)| fqn == current_fqn)
+                            })
+                        });
+                        if !current_is_valid {
+                            updates.push((name.clone(), idx, resolved_fqn));
+                        }
                     }
                 }
             }
