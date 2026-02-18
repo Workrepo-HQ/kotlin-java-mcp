@@ -32,6 +32,10 @@ enum Command {
         /// Optional line number for precise resolution
         #[arg(short, long)]
         line: Option<usize>,
+
+        /// Include import statements in results
+        #[arg(long)]
+        include_imports: bool,
     },
 
     /// Find the definition/declaration of a symbol
@@ -56,9 +60,9 @@ async fn main() -> anyhow::Result<()> {
 
     match args.command {
         None | Some(Command::Serve) => run_server(project_root).await,
-        Some(Command::FindUsages { symbol, file, line }) => {
+        Some(Command::FindUsages { symbol, file, line, include_imports }) => {
             init_cli_tracing();
-            run_find_usages(project_root, &symbol, file.as_deref(), line)
+            run_find_usages(project_root, &symbol, file.as_deref(), line, include_imports)
         }
         Some(Command::FindDefinition { symbol, file, line }) => {
             init_cli_tracing();
@@ -101,6 +105,7 @@ fn run_find_usages(
     symbol: &str,
     file: Option<&str>,
     line: Option<usize>,
+    include_imports: bool,
 ) -> anyhow::Result<()> {
     let index = build_index(&project_root);
 
@@ -114,7 +119,7 @@ fn run_find_usages(
     });
 
     let results =
-        kotlin_java_mcp::tools::find_usages::find_usages(&index, symbol, file_path.as_deref(), line);
+        kotlin_java_mcp::tools::find_usages::find_usages(&index, symbol, file_path.as_deref(), line, include_imports);
 
     let output = kotlin_java_mcp::tools::format_occurrences(&results, &project_root);
     println!("{}", output);

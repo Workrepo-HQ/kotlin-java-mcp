@@ -21,7 +21,7 @@ fn build_index() -> kotlin_java_mcp::indexer::SymbolIndex {
 #[test]
 fn test_find_usages_of_user_includes_java_files() {
     let index = build_index();
-    let results = find_usages(&index, "User", None, None);
+    let results = find_usages(&index, "User", None, None, true);
 
     // User should be referenced in both .kt and .java files
     let java_refs: Vec<_> = results
@@ -86,7 +86,7 @@ fn test_find_definition_of_java_class_from_kotlin() {
 #[test]
 fn test_find_usages_of_java_helper_includes_kotlin_files() {
     let index = build_index();
-    let results = find_usages(&index, "JavaHelper", None, None);
+    let results = find_usages(&index, "JavaHelper", None, None, true);
 
     // JavaHelper should be referenced from JavaUsage.kt
     let kt_refs: Vec<_> = results
@@ -121,7 +121,7 @@ fn test_find_usages_of_java_helper_includes_kotlin_files() {
 #[test]
 fn test_find_usages_by_fqn_java_class() {
     let index = build_index();
-    let results = find_usages(&index, "com.example.core.JavaHelper", None, None);
+    let results = find_usages(&index, "com.example.core.JavaHelper", None, None, true);
 
     assert!(
         !results.is_empty(),

@@ -10,6 +10,7 @@ pub fn find_usages<'a>(
     symbol: &str,
     file: Option<&Path>,
     line: Option<usize>,
+    include_imports: bool,
 ) -> Vec<&'a SymbolOccurrence> {
     // If file and line are provided, try to find the exact symbol first
     let fqn = if let (Some(f), Some(l)) = (file, line) {
@@ -28,7 +29,9 @@ pub fn find_usages<'a>(
         let mut results: Vec<&SymbolOccurrence> = Vec::new();
         if let Some(occs) = index.by_fqn.get(fqn) {
             for occ in occs {
-                if occ.kind.is_reference() || matches!(occ.kind, crate::indexer::SymbolKind::Import) {
+                if occ.kind.is_reference()
+                    || (include_imports && matches!(occ.kind, crate::indexer::SymbolKind::Import))
+                {
                     results.push(occ);
                 }
             }
@@ -55,7 +58,9 @@ pub fn find_usages<'a>(
     let mut results: Vec<&SymbolOccurrence> = Vec::new();
     if let Some(occs) = index.by_name.get(symbol) {
         for occ in occs {
-            if occ.kind.is_reference() || matches!(occ.kind, crate::indexer::SymbolKind::Import) {
+            if occ.kind.is_reference()
+                || (include_imports && matches!(occ.kind, crate::indexer::SymbolKind::Import))
+            {
                 results.push(occ);
             }
         }

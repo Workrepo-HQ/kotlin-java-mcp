@@ -31,6 +31,8 @@ pub struct FindUsagesParams {
     pub file: Option<String>,
     #[schemars(description = "Optional line number where the symbol appears, for precise resolution")]
     pub line: Option<usize>,
+    #[schemars(description = "Include import statements in results (default: true)")]
+    pub include_imports: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -88,6 +90,7 @@ impl KotlinMcpServer {
             &params.symbol,
             file_path.as_deref(),
             params.line,
+            params.include_imports.unwrap_or(true),
         );
 
         let output = crate::tools::format_occurrences(&results, &self.project_root);

@@ -20,7 +20,7 @@ fn build_index() -> kotlin_java_mcp::indexer::SymbolIndex {
 #[test]
 fn test_find_usages_of_user_class() {
     let index = build_index();
-    let results = find_usages(&index, "User", None, None);
+    let results = find_usages(&index,"User", None, None, true);
 
     // User is used in many places: imports, type references, call sites
     assert!(!results.is_empty(), "Expected usages of User, found none");
@@ -40,7 +40,7 @@ fn test_find_usages_of_user_class() {
 #[test]
 fn test_find_usages_of_user_service() {
     let index = build_index();
-    let results = find_usages(&index, "UserService", None, None);
+    let results = find_usages(&index,"UserService", None, None, true);
 
     assert!(!results.is_empty(), "Expected usages of UserService");
 
@@ -59,7 +59,7 @@ fn test_find_usages_of_user_service() {
 #[test]
 fn test_find_usages_of_repository_interface() {
     let index = build_index();
-    let results = find_usages(&index, "Repository", None, None);
+    let results = find_usages(&index,"Repository", None, None, true);
 
     assert!(
         !results.is_empty(),
@@ -81,7 +81,7 @@ fn test_find_usages_of_repository_interface() {
 #[test]
 fn test_find_usages_of_user_role_enum() {
     let index = build_index();
-    let results = find_usages(&index, "UserRole", None, None);
+    let results = find_usages(&index,"UserRole", None, None, true);
 
     assert!(!results.is_empty(), "Expected usages of UserRole");
 }
@@ -89,7 +89,7 @@ fn test_find_usages_of_user_role_enum() {
 #[test]
 fn test_find_usages_by_fqn() {
     let index = build_index();
-    let results = find_usages(&index, "com.example.core.User", None, None);
+    let results = find_usages(&index,"com.example.core.User", None, None, true);
 
     assert!(
         !results.is_empty(),
@@ -100,7 +100,7 @@ fn test_find_usages_by_fqn() {
 #[test]
 fn test_find_usages_nonexistent_symbol() {
     let index = build_index();
-    let results = find_usages(&index, "NonExistentSymbol", None, None);
+    let results = find_usages(&index,"NonExistentSymbol", None, None, true);
 
     assert!(results.is_empty(), "Expected no usages for nonexistent symbol");
 }
@@ -108,7 +108,7 @@ fn test_find_usages_nonexistent_symbol() {
 #[test]
 fn test_find_usages_import_has_correct_line_number() {
     let index = build_index();
-    let results = find_usages(&index, "worksheetWorkflowConfig", None, None);
+    let results = find_usages(&index,"worksheetWorkflowConfig", None, None, true);
 
     let imports: Vec<_> = results
         .iter()
@@ -130,7 +130,7 @@ fn test_find_usages_bare_identifier_reference() {
     // worksheetWorkflowConfig is used as a bare value reference (not a call, not a type)
     // in expressions like `listOf(worksheetWorkflowConfig)` and `val config = worksheetWorkflowConfig`
     let index = build_index();
-    let results = find_usages(&index, "worksheetWorkflowConfig", None, None);
+    let results = find_usages(&index,"worksheetWorkflowConfig", None, None, true);
 
     // Should have at least the import + two value references in WorkflowUsage.kt
     let in_workflow_usage: Vec<_> = results
@@ -171,7 +171,7 @@ fn usages_in_file<'a>(
 fn test_find_usages_navigation_receiver_property_access() {
     // `Config.maxRetries` — Config is the receiver of a navigation_expression
     let index = build_index();
-    let results = find_usages(&index, "Config", None, None);
+    let results = find_usages(&index,"Config", None, None, true);
 
     let in_patterns = usages_in_file(&results, "ReferencePatterns.kt");
 
@@ -190,7 +190,7 @@ fn test_find_usages_navigation_receiver_property_access() {
 fn test_find_usages_callable_reference_bare() {
     // `::createUser` — callable reference to a top-level function
     let index = build_index();
-    let results = find_usages(&index, "createUser", None, None);
+    let results = find_usages(&index,"createUser", None, None, true);
 
     let in_patterns = usages_in_file(&results, "ReferencePatterns.kt");
 
@@ -207,7 +207,7 @@ fn test_find_usages_callable_reference_bare() {
 fn test_find_usages_callable_reference_qualified() {
     // `User::toString` — qualified callable reference, User is the receiver
     let index = build_index();
-    let results = find_usages(&index, "User", None, None);
+    let results = find_usages(&index,"User", None, None, true);
 
     let in_patterns = usages_in_file(&results, "ReferencePatterns.kt");
 
@@ -224,7 +224,7 @@ fn test_find_usages_callable_reference_qualified() {
 fn test_find_usages_infix_function() {
     // `"key" mapTo "value"` — infix call to mapTo
     let index = build_index();
-    let results = find_usages(&index, "mapTo", None, None);
+    let results = find_usages(&index,"mapTo", None, None, true);
 
     let in_patterns = usages_in_file(&results, "ReferencePatterns.kt");
 
@@ -245,7 +245,7 @@ fn test_find_usages_fqn_not_shadowed_by_class_method() {
     let index = build_index();
 
     // Search by FQN for the top-level function
-    let results = find_usages(&index, "com.example.core.generateReport", None, None);
+    let results = find_usages(&index,"com.example.core.generateReport", None, None, true);
 
     // The call `generateReport("test")` in useTopLevel() in ReportServiceImpl.kt
     // should resolve to the top-level function, not to ReportServiceImpl.generateReport
