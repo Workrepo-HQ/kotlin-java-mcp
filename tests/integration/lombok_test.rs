@@ -136,6 +136,18 @@ fn test_lombok_find_usages_of_field_includes_getter_calls() {
         "Expected usages of username field (via getUsername/setUsername) in LombokConsumer.java, found none. All results: {:?}",
         results.iter().map(|o| format!("{}:{} {} {:?}", o.file.file_name().unwrap().to_str().unwrap(), o.line, o.name, o.kind)).collect::<Vec<_>>()
     );
+
+    // Should also find Kotlin property-style accesses in LombokUsage.kt
+    let in_kotlin: Vec<_> = results
+        .iter()
+        .filter(|o| o.file.file_name().unwrap().to_str().unwrap() == "LombokUsage.kt")
+        .collect();
+
+    assert!(
+        !in_kotlin.is_empty(),
+        "Expected usages of username field (via Kotlin property access) in LombokUsage.kt, found none. All results: {:?}",
+        results.iter().map(|o| format!("{}:{} {} {:?}", o.file.file_name().unwrap().to_str().unwrap(), o.line, o.name, o.kind)).collect::<Vec<_>>()
+    );
 }
 
 #[test]

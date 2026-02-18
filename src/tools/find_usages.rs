@@ -50,6 +50,24 @@ pub fn find_usages<'a>(
         }
         // Also collect usages via Lombok accessor FQNs (getter/setter calls count as field usages)
         if let Some(accessor_fqns) = index.lombok_accessors.get(fqn) {
+            // Kotlin accesses Lombok fields using property syntax (obj.fieldName) rather than
+            // getter/setter methods (obj.getFieldName()). Search by the field's simple name
+            // to catch these property-style references.
+            let field_simple_name = fqn.rsplit('.').next().unwrap_or(fqn);
+            if let Some(occs) = index.by_name.get(field_simple_name) {
+                for occ in occs {
+                    if occ.kind.is_reference()
+                        || (include_imports
+                            && matches!(occ.kind, crate::indexer::SymbolKind::Import))
+                    {
+                        // Skip if already covered by the FQN lookup above
+                        if occ.fqn.as_deref() != Some(fqn) {
+                            results.push(occ);
+                        }
+                    }
+                }
+            }
+
             for acc_fqn in accessor_fqns {
                 // First try FQN-based lookup
                 if let Some(occs) = index.by_fqn.get(acc_fqn) {
@@ -85,8 +103,15 @@ pub fn find_usages<'a>(
     }
 
     // Fall back to name-based lookup
+    // When the symbol is a FQN (contains '.'), by_name is keyed by simple names,
+    // so extract the last component for the lookup.
+    let lookup_name = if symbol.contains('.') {
+        symbol.rsplit('.').next().unwrap_or(symbol)
+    } else {
+        symbol
+    };
     let mut results: Vec<&SymbolOccurrence> = Vec::new();
-    if let Some(occs) = index.by_name.get(symbol) {
+    if let Some(occs) = index.by_name.get(lookup_name) {
         for occ in occs {
             if occ.kind.is_reference()
                 || (include_imports && matches!(occ.kind, crate::indexer::SymbolKind::Import))
