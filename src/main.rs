@@ -5,7 +5,7 @@ use rmcp::ServiceExt;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
-#[command(name = "kotlin-java-mcp", about = "Kotlin code navigation — MCP server and CLI")]
+#[command(name = "kotlin-java-mcp", version, about = "Kotlin code navigation — MCP server and CLI")]
 struct Args {
     /// Root directory of the Kotlin project to index
     #[arg(short, long, default_value = ".")]
