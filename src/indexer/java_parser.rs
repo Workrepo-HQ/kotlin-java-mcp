@@ -7,10 +7,16 @@ use super::scope::ScopeTree;
 use super::{FileInfo, ImportInfo, SymbolKind, SymbolOccurrence};
 
 /// Parse a single Java file and extract symbols.
+/// Returns (FileInfo, occurrences, type_aliases, lombok_accessor_mappings).
 pub fn parse_java_file(
     path: &Path,
     source: &str,
-) -> (FileInfo, Vec<SymbolOccurrence>, Vec<(String, String)>) {
+) -> (
+    FileInfo,
+    Vec<SymbolOccurrence>,
+    Vec<(String, String)>,
+    Vec<(String, Vec<String>)>,
+) {
     let mut parser = tree_sitter::Parser::new();
     let language = tree_sitter_java::LANGUAGE;
     parser
@@ -29,6 +35,7 @@ pub fn parse_java_file(
                 },
                 vec![],
                 vec![],
+                vec![],
             );
         }
     };
@@ -42,6 +49,7 @@ pub fn parse_java_file(
 
     let mut occurrences = Vec::new();
     let type_aliases = Vec::new();
+    let mut lombok_accessors = Vec::new();
 
     extract_declarations_java(
         &root,
@@ -50,6 +58,7 @@ pub fn parse_java_file(
         package.as_deref(),
         &scope_tree,
         &mut occurrences,
+        &mut lombok_accessors,
     );
 
     extract_references_java(
@@ -87,7 +96,7 @@ pub fn parse_java_file(
         imports,
     };
 
-    (file_info, occurrences, type_aliases)
+    (file_info, occurrences, type_aliases, lombok_accessors)
 }
 
 fn extract_package_java(root: &tree_sitter::Node, src: &[u8]) -> Option<String> {
@@ -196,6 +205,7 @@ fn extract_declarations_java(
     package: Option<&str>,
     scope_tree: &ScopeTree,
     occurrences: &mut Vec<SymbolOccurrence>,
+    lombok_accessors: &mut Vec<(String, Vec<String>)>,
 ) {
     match node.kind() {
         "class_declaration" => {
@@ -322,7 +332,7 @@ fn extract_declarations_java(
         }
         "field_declaration" => {
             // A field_declaration may contain multiple variable_declarators
-            extract_field_declarations(node, src, path, package, scope_tree, occurrences);
+            extract_field_declarations(node, src, path, package, scope_tree, occurrences, lombok_accessors);
             // Don't recurse into children; we handle them above
             return;
         }
@@ -331,7 +341,7 @@ fn extract_declarations_java(
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        extract_declarations_java(&child, src, path, package, scope_tree, occurrences);
+        extract_declarations_java(&child, src, path, package, scope_tree, occurrences, lombok_accessors);
     }
 }
 
@@ -342,15 +352,43 @@ fn extract_field_declarations(
     package: Option<&str>,
     scope_tree: &ScopeTree,
     occurrences: &mut Vec<SymbolOccurrence>,
+    lombok_accessors: &mut Vec<(String, Vec<String>)>,
 ) {
+    // Determine which Lombok accessors to generate for this field.
+    // Check class-level annotations by walking: field_declaration → parent class_body → parent class_declaration
+    let class_node = node
+        .parent()
+        .and_then(|body| body.parent())
+        .filter(|n| n.kind() == "class_declaration");
+
+    let class_has_data = class_node
+        .as_ref()
+        .is_some_and(|n| has_annotation(n, src, "Data"));
+    let class_has_getter = class_node
+        .as_ref()
+        .is_some_and(|n| has_annotation(n, src, "Getter"));
+    let class_has_setter = class_node
+        .as_ref()
+        .is_some_and(|n| has_annotation(n, src, "Setter"));
+
+    // Field-level annotations
+    let field_has_getter = has_annotation(node, src, "Getter");
+    let field_has_setter = has_annotation(node, src, "Setter");
+
+    let generate_getter = field_has_getter || class_has_data || class_has_getter;
+    let generate_setter = field_has_setter || class_has_data || class_has_setter;
+
+    let is_final = has_modifier(node, "final");
+    let is_boolean = field_type_is_boolean(node, src);
+
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "variable_declarator" {
             if let Some(name) = find_child_name(&child, src) {
                 let fqn = build_fqn(package, scope_tree, node.start_byte(), &name);
                 occurrences.push(SymbolOccurrence {
-                    name,
-                    fqn: Some(fqn),
+                    name: name.clone(),
+                    fqn: Some(fqn.clone()),
                     kind: SymbolKind::PropertyDeclaration,
                     file: path.to_path_buf(),
                     line: child.start_position().row + 1,
@@ -358,8 +396,128 @@ fn extract_field_declarations(
                     byte_range: child.byte_range(),
                     receiver_type: None,
                 });
+
+                // Synthesize Lombok accessor declarations
+                let mut accessor_fqns = Vec::new();
+
+                if generate_getter {
+                    let getter = getter_name(&name, is_boolean);
+                    let getter_fqn = build_fqn(package, scope_tree, node.start_byte(), &getter);
+                    occurrences.push(SymbolOccurrence {
+                        name: getter,
+                        fqn: Some(getter_fqn.clone()),
+                        kind: SymbolKind::FunctionDeclaration,
+                        file: path.to_path_buf(),
+                        line: child.start_position().row + 1,
+                        column: child.start_position().column + 1,
+                        byte_range: child.byte_range(),
+                        receiver_type: None,
+                    });
+                    accessor_fqns.push(getter_fqn);
+                }
+
+                if generate_setter && !is_final {
+                    let setter = setter_name(&name);
+                    let setter_fqn = build_fqn(package, scope_tree, node.start_byte(), &setter);
+                    occurrences.push(SymbolOccurrence {
+                        name: setter,
+                        fqn: Some(setter_fqn.clone()),
+                        kind: SymbolKind::FunctionDeclaration,
+                        file: path.to_path_buf(),
+                        line: child.start_position().row + 1,
+                        column: child.start_position().column + 1,
+                        byte_range: child.byte_range(),
+                        receiver_type: None,
+                    });
+                    accessor_fqns.push(setter_fqn);
+                }
+
+                if !accessor_fqns.is_empty() {
+                    lombok_accessors.push((fqn, accessor_fqns));
+                }
             }
         }
+    }
+}
+
+// --- Lombok helpers ---
+
+/// Check if a node's `modifiers` child contains an annotation with the given name.
+/// Matches both simple (`@Data`) and qualified (`@lombok.Data`) forms.
+fn has_annotation(node: &tree_sitter::Node, src: &[u8], annotation_name: &str) -> bool {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "modifiers" {
+            let mut inner = child.walk();
+            for modifier in child.children(&mut inner) {
+                if modifier.kind() == "marker_annotation" || modifier.kind() == "annotation" {
+                    if let Some(name_node) = modifier.child_by_field_name("name") {
+                        let text = node_text(&name_node, src);
+                        // Match "Data" or "lombok.Data"
+                        if text == annotation_name
+                            || text.ends_with(&format!(".{}", annotation_name))
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Check if a node's `modifiers` child contains a specific keyword (e.g., "final").
+fn has_modifier(node: &tree_sitter::Node, keyword: &str) -> bool {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "modifiers" {
+            let mut inner = child.walk();
+            for modifier in child.children(&mut inner) {
+                if modifier.kind() == keyword {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Check if a field_declaration has a boolean type (primitive `boolean`).
+fn field_type_is_boolean(node: &tree_sitter::Node, src: &[u8]) -> bool {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "boolean_type" {
+            return true;
+        }
+        // Also check for `type_identifier` matching "boolean" (shouldn't happen in Java, but safe)
+        if child.kind() == "type_identifier" && node_text(&child, src) == "boolean" {
+            return true;
+        }
+    }
+    false
+}
+
+/// Generate getter name: "name" → "getName", "active" (boolean) → "isActive".
+fn getter_name(field_name: &str, is_boolean: bool) -> String {
+    let capitalized = capitalize(field_name);
+    if is_boolean {
+        format!("is{}", capitalized)
+    } else {
+        format!("get{}", capitalized)
+    }
+}
+
+/// Generate setter name: "name" → "setName".
+fn setter_name(field_name: &str) -> String {
+    format!("set{}", capitalize(field_name))
+}
+
+fn capitalize(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(c) => c.to_uppercase().to_string() + chars.as_str(),
     }
 }
 
@@ -628,7 +786,7 @@ public class MyClass {
 }
 "#;
         let path = PathBuf::from("MyClass.java");
-        let (file_info, occurrences, _) = parse_java_file(&path, source);
+        let (file_info, occurrences, _, _) = parse_java_file(&path, source);
 
         assert_eq!(file_info.package, Some("com.example".to_string()));
 
@@ -690,7 +848,7 @@ public class Foo {
 }
 "#;
         let path = PathBuf::from("Foo.java");
-        let (_, occurrences, _) = parse_java_file(&path, source);
+        let (_, occurrences, _, _) = parse_java_file(&path, source);
 
         let ctor = occurrences
             .iter()
@@ -710,7 +868,7 @@ public interface MyInterface {
 }
 "#;
         let path = PathBuf::from("MyInterface.java");
-        let (_, occurrences, _) = parse_java_file(&path, source);
+        let (_, occurrences, _, _) = parse_java_file(&path, source);
 
         let iface = occurrences
             .iter()
@@ -747,7 +905,7 @@ public enum Color {
 }
 "#;
         let path = PathBuf::from("Color.java");
-        let (_, occurrences, _) = parse_java_file(&path, source);
+        let (_, occurrences, _, _) = parse_java_file(&path, source);
 
         let enum_decl = occurrences
             .iter()
@@ -776,7 +934,7 @@ import static java.util.Collections.emptyList;
 import java.io.*;
 "#;
         let path = PathBuf::from("Test.java");
-        let (file_info, _, _) = parse_java_file(&path, source);
+        let (file_info, _, _, _) = parse_java_file(&path, source);
 
         assert_eq!(file_info.imports.len(), 4);
 
@@ -812,7 +970,7 @@ public class Caller {
 }
 "#;
         let path = PathBuf::from("Caller.java");
-        let (_, occurrences, _) = parse_java_file(&path, source);
+        let (_, occurrences, _, _) = parse_java_file(&path, source);
 
         // Should have a CallSite for `new Helper()`
         let new_helper = occurrences
@@ -835,5 +993,194 @@ public class Caller {
             .collect();
         assert!(call_sites.contains(&"doWork"));
         assert!(call_sites.contains(&"getName"));
+    }
+
+    #[test]
+    fn test_parse_lombok_data_class() {
+        let source = r#"
+package com.example;
+
+import lombok.Data;
+
+@Data
+public class User {
+    private String name;
+    private int age;
+}
+"#;
+        let path = PathBuf::from("User.java");
+        let (_, occurrences, _, lombok_acc) = parse_java_file(&path, source);
+
+        let decl_names: Vec<&str> = occurrences
+            .iter()
+            .filter(|o| o.kind.is_declaration())
+            .map(|o| o.name.as_str())
+            .collect();
+
+        // Should have field + getter + setter for each field
+        assert!(decl_names.contains(&"name"), "Expected name field, got: {:?}", decl_names);
+        assert!(decl_names.contains(&"getName"), "Expected getName, got: {:?}", decl_names);
+        assert!(decl_names.contains(&"setName"), "Expected setName, got: {:?}", decl_names);
+        assert!(decl_names.contains(&"age"), "Expected age field, got: {:?}", decl_names);
+        assert!(decl_names.contains(&"getAge"), "Expected getAge, got: {:?}", decl_names);
+        assert!(decl_names.contains(&"setAge"), "Expected setAge, got: {:?}", decl_names);
+
+        // Check FQNs
+        let get_name = occurrences.iter().find(|o| o.name == "getName" && o.kind.is_declaration()).unwrap();
+        assert_eq!(get_name.fqn.as_deref(), Some("com.example.User.getName"));
+
+        let set_name = occurrences.iter().find(|o| o.name == "setName" && o.kind.is_declaration()).unwrap();
+        assert_eq!(set_name.fqn.as_deref(), Some("com.example.User.setName"));
+
+        // Check lombok_accessors mapping
+        assert!(!lombok_acc.is_empty(), "Expected lombok accessor mappings");
+        let name_accessors = lombok_acc.iter().find(|(fqn, _)| fqn == "com.example.User.name").unwrap();
+        assert!(name_accessors.1.contains(&"com.example.User.getName".to_string()));
+        assert!(name_accessors.1.contains(&"com.example.User.setName".to_string()));
+    }
+
+    #[test]
+    fn test_parse_lombok_data_final_field() {
+        let source = r#"
+package com.example;
+
+import lombok.Data;
+
+@Data
+public class Entity {
+    private final String id;
+    private String name;
+}
+"#;
+        let path = PathBuf::from("Entity.java");
+        let (_, occurrences, _, _) = parse_java_file(&path, source);
+
+        let decl_names: Vec<&str> = occurrences
+            .iter()
+            .filter(|o| o.kind.is_declaration())
+            .map(|o| o.name.as_str())
+            .collect();
+
+        // Final field: getter but NO setter
+        assert!(decl_names.contains(&"getId"), "Expected getId for final field, got: {:?}", decl_names);
+        assert!(!decl_names.contains(&"setId"), "Should NOT have setId for final field, got: {:?}", decl_names);
+
+        // Non-final field: both getter and setter
+        assert!(decl_names.contains(&"getName"), "Expected getName, got: {:?}", decl_names);
+        assert!(decl_names.contains(&"setName"), "Expected setName, got: {:?}", decl_names);
+    }
+
+    #[test]
+    fn test_parse_lombok_data_boolean_field() {
+        let source = r#"
+package com.example;
+
+import lombok.Data;
+
+@Data
+public class Flags {
+    private boolean active;
+    private String label;
+}
+"#;
+        let path = PathBuf::from("Flags.java");
+        let (_, occurrences, _, _) = parse_java_file(&path, source);
+
+        let decl_names: Vec<&str> = occurrences
+            .iter()
+            .filter(|o| o.kind.is_declaration())
+            .map(|o| o.name.as_str())
+            .collect();
+
+        // boolean field → isActive getter
+        assert!(decl_names.contains(&"isActive"), "Expected isActive for boolean, got: {:?}", decl_names);
+        assert!(!decl_names.contains(&"getActive"), "Should NOT have getActive for boolean, got: {:?}", decl_names);
+        assert!(decl_names.contains(&"setActive"), "Expected setActive, got: {:?}", decl_names);
+
+        // Non-boolean field → getLabel
+        assert!(decl_names.contains(&"getLabel"), "Expected getLabel, got: {:?}", decl_names);
+    }
+
+    #[test]
+    fn test_parse_lombok_getter_setter_class() {
+        let source = r#"
+package com.example;
+
+import lombok.Getter;
+import lombok.Setter;
+
+@Getter
+@Setter
+public class Config {
+    private String host;
+    private int port;
+}
+"#;
+        let path = PathBuf::from("Config.java");
+        let (_, occurrences, _, _) = parse_java_file(&path, source);
+
+        let decl_names: Vec<&str> = occurrences
+            .iter()
+            .filter(|o| o.kind.is_declaration())
+            .map(|o| o.name.as_str())
+            .collect();
+
+        assert!(decl_names.contains(&"getHost"), "Expected getHost, got: {:?}", decl_names);
+        assert!(decl_names.contains(&"setHost"), "Expected setHost, got: {:?}", decl_names);
+        assert!(decl_names.contains(&"getPort"), "Expected getPort, got: {:?}", decl_names);
+        assert!(decl_names.contains(&"setPort"), "Expected setPort, got: {:?}", decl_names);
+    }
+
+    #[test]
+    fn test_parse_lombok_getter_only_class() {
+        let source = r#"
+package com.example;
+
+import lombok.Getter;
+
+@Getter
+public class ReadOnly {
+    private String value;
+}
+"#;
+        let path = PathBuf::from("ReadOnly.java");
+        let (_, occurrences, _, _) = parse_java_file(&path, source);
+
+        let decl_names: Vec<&str> = occurrences
+            .iter()
+            .filter(|o| o.kind.is_declaration())
+            .map(|o| o.name.as_str())
+            .collect();
+
+        assert!(decl_names.contains(&"getValue"), "Expected getValue, got: {:?}", decl_names);
+        assert!(!decl_names.contains(&"setValue"), "Should NOT have setValue with @Getter only, got: {:?}", decl_names);
+    }
+
+    #[test]
+    fn test_parse_lombok_field_level() {
+        let source = r#"
+package com.example;
+
+import lombok.Getter;
+
+public class Selective {
+    @Getter
+    private String accessible;
+    private String hidden;
+}
+"#;
+        let path = PathBuf::from("Selective.java");
+        let (_, occurrences, _, _) = parse_java_file(&path, source);
+
+        let decl_names: Vec<&str> = occurrences
+            .iter()
+            .filter(|o| o.kind.is_declaration())
+            .map(|o| o.name.as_str())
+            .collect();
+
+        // Field with @Getter → getter synthesized
+        assert!(decl_names.contains(&"getAccessible"), "Expected getAccessible, got: {:?}", decl_names);
+        // Field without annotation → no getter
+        assert!(!decl_names.contains(&"getHidden"), "Should NOT have getHidden, got: {:?}", decl_names);
     }
 }

@@ -48,6 +48,36 @@ pub fn find_usages<'a>(
                 }
             }
         }
+        // Also collect usages via Lombok accessor FQNs (getter/setter calls count as field usages)
+        if let Some(accessor_fqns) = index.lombok_accessors.get(fqn) {
+            for acc_fqn in accessor_fqns {
+                // First try FQN-based lookup
+                if let Some(occs) = index.by_fqn.get(acc_fqn) {
+                    for occ in occs {
+                        if occ.kind.is_reference()
+                            || (include_imports
+                                && matches!(occ.kind, crate::indexer::SymbolKind::Import))
+                        {
+                            results.push(occ);
+                        }
+                    }
+                }
+                // Also check by simple name, since cross-referencing may not resolve
+                // receiver-based method calls (e.g., `user.getUsername()`) to the correct FQN.
+                let simple_name = acc_fqn.rsplit('.').next().unwrap_or(acc_fqn);
+                if let Some(occs) = index.by_name.get(simple_name) {
+                    for occ in occs {
+                        if occ.kind.is_reference() {
+                            // Avoid duplicates: skip if already added via FQN lookup
+                            let dominated_by_fqn = occ.fqn.as_deref() == Some(acc_fqn);
+                            if !dominated_by_fqn {
+                                results.push(occ);
+                            }
+                        }
+                    }
+                }
+            }
+        }
         if !results.is_empty() {
             results.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)));
             return results;

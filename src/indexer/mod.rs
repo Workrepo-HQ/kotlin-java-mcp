@@ -91,6 +91,8 @@ pub struct SymbolIndex {
     pub by_fqn: HashMap<String, Vec<SymbolOccurrence>>,
     pub files: HashMap<PathBuf, FileInfo>,
     pub type_aliases: HashMap<String, String>,
+    /// Lombok accessor mappings: field FQN → [getter FQN, setter FQN, ...]
+    pub lombok_accessors: HashMap<String, Vec<String>>,
 }
 
 impl SymbolIndex {
@@ -115,6 +117,7 @@ impl SymbolIndex {
         self.by_fqn.clear();
         self.files.clear();
         self.type_aliases.clear();
+        self.lombok_accessors.clear();
     }
 
     pub fn stats(&self) -> IndexStats {
@@ -124,6 +127,7 @@ impl SymbolIndex {
             symbols_by_fqn: self.by_fqn.len(),
             total_occurrences: self.by_name.values().map(|v| v.len()).sum(),
             type_aliases: self.type_aliases.len(),
+            lombok_accessors: self.lombok_accessors.len(),
         }
     }
 }
@@ -135,14 +139,15 @@ pub struct IndexStats {
     pub symbols_by_fqn: usize,
     pub total_occurrences: usize,
     pub type_aliases: usize,
+    pub lombok_accessors: usize,
 }
 
 impl std::fmt::Display for IndexStats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Indexed {} files: {} unique names, {} FQNs, {} total occurrences, {} type aliases",
-            self.files, self.symbols_by_name, self.symbols_by_fqn, self.total_occurrences, self.type_aliases
+            "Indexed {} files: {} unique names, {} FQNs, {} total occurrences, {} type aliases, {} lombok accessors",
+            self.files, self.symbols_by_name, self.symbols_by_fqn, self.total_occurrences, self.type_aliases, self.lombok_accessors
         )
     }
 }

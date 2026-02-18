@@ -46,7 +46,7 @@ pub fn index_files(root: &Path) -> SymbolIndex {
     let files = discover_source_files(root);
     debug!("Discovered {} source files", files.len());
 
-    let file_results: Vec<(FileInfo, Vec<SymbolOccurrence>, Vec<(String, String)>)> = files
+    let file_results: Vec<(FileInfo, Vec<SymbolOccurrence>, Vec<(String, String)>, Vec<(String, Vec<String>)>)> = files
         .par_iter()
         .filter_map(|path| {
             let source = match std::fs::read_to_string(path) {
@@ -57,7 +57,10 @@ pub fn index_files(root: &Path) -> SymbolIndex {
                 }
             };
             match path.extension().and_then(|e| e.to_str()) {
-                Some("kt") => Some(parse_file(path, &source)),
+                Some("kt") => {
+                    let (fi, occs, ta) = parse_file(path, &source);
+                    Some((fi, occs, ta, vec![]))
+                }
                 Some("java") => Some(super::java_parser::parse_java_file(path, &source)),
                 _ => None,
             }
@@ -65,13 +68,16 @@ pub fn index_files(root: &Path) -> SymbolIndex {
         .collect();
 
     let mut index = SymbolIndex::new();
-    for (file_info, occurrences, type_aliases) in file_results {
+    for (file_info, occurrences, type_aliases, lombok_acc) in file_results {
         index.add_file_info(file_info);
         for occ in occurrences {
             index.add_occurrence(occ);
         }
         for (alias_fqn, target_fqn) in type_aliases {
             index.type_aliases.insert(alias_fqn, target_fqn);
+        }
+        for (field_fqn, accessor_fqns) in lombok_acc {
+            index.lombok_accessors.insert(field_fqn, accessor_fqns);
         }
     }
 

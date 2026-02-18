@@ -5,4 +5,5 @@ mod integration {
     mod find_definition_test;
     mod gradle_test;
     mod java_parser_test;
+    mod lombok_test;
 }
