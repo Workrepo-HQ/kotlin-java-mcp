@@ -1,3 +1,4 @@
+pub mod java_parser;
 pub mod parser;
 pub mod scope;
 pub mod symbols;
@@ -18,6 +19,9 @@ pub enum SymbolKind {
     TypeAliasDeclaration,
     ParameterDeclaration,
     ExtensionFunctionDeclaration,
+    ConstructorDeclaration,
+    RecordDeclaration,
+    AnnotationTypeDeclaration,
     // References
     TypeReference,
     CallSite,
@@ -41,6 +45,9 @@ impl SymbolKind {
                 | SymbolKind::TypeAliasDeclaration
                 | SymbolKind::ParameterDeclaration
                 | SymbolKind::ExtensionFunctionDeclaration
+                | SymbolKind::ConstructorDeclaration
+                | SymbolKind::RecordDeclaration
+                | SymbolKind::AnnotationTypeDeclaration
         )
     }
 

@@ -12,6 +12,9 @@ pub const KOTLIN_IMPLICIT_IMPORTS: &[&str] = &[
     "kotlin.text",
 ];
 
+/// Java implicit imports that are available in every file.
+pub const JAVA_IMPLICIT_IMPORTS: &[&str] = &["java.lang"];
+
 /// After initial indexing, cross-reference symbols:
 /// For each reference that only has a by-name entry, try to resolve its FQN
 /// using the full index.
@@ -162,10 +165,13 @@ fn resolve_symbol_fqn(
         }
     }
 
-    // 5. Kotlin implicit imports
+    // 5. Kotlin and Java implicit imports
     if let Some(decls) = declarations_by_name.get(name) {
         for (fqn, _) in decls {
-            for prefix in KOTLIN_IMPLICIT_IMPORTS {
+            for prefix in KOTLIN_IMPLICIT_IMPORTS
+                .iter()
+                .chain(JAVA_IMPLICIT_IMPORTS.iter())
+            {
                 if fqn.starts_with(prefix) && fqn == &format!("{}.{}", prefix, name) {
                     return Some(fqn.clone());
                 }

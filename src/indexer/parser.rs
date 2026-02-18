@@ -7,8 +7,8 @@ use walkdir::WalkDir;
 use super::scope::ScopeTree;
 use super::{FileInfo, ImportInfo, SymbolIndex, SymbolKind, SymbolOccurrence};
 
-/// Discover all .kt files under the given root, skipping build dirs and hidden dirs.
-pub fn discover_kotlin_files(root: &Path) -> Vec<PathBuf> {
+/// Discover all .kt and .java files under the given root, skipping build dirs and hidden dirs.
+pub fn discover_source_files(root: &Path) -> Vec<PathBuf> {
     WalkDir::new(root)
         .into_iter()
         .filter_entry(|e| {
@@ -25,16 +25,26 @@ pub fn discover_kotlin_files(root: &Path) -> Vec<PathBuf> {
         .filter_map(|e| e.ok())
         .filter(|e| {
             e.file_type().is_file()
-                && e.path().extension().is_some_and(|ext| ext == "kt")
+                && e.path()
+                    .extension()
+                    .is_some_and(|ext| ext == "kt" || ext == "java")
         })
         .map(|e| e.into_path())
         .collect()
 }
 
+/// Discover only .kt files (backward compat for tests).
+pub fn discover_kotlin_files(root: &Path) -> Vec<PathBuf> {
+    discover_source_files(root)
+        .into_iter()
+        .filter(|p| p.extension().is_some_and(|ext| ext == "kt"))
+        .collect()
+}
+
 /// Parse all discovered files in parallel and build a SymbolIndex.
 pub fn index_files(root: &Path) -> SymbolIndex {
-    let files = discover_kotlin_files(root);
-    debug!("Discovered {} Kotlin files", files.len());
+    let files = discover_source_files(root);
+    debug!("Discovered {} source files", files.len());
 
     let file_results: Vec<(FileInfo, Vec<SymbolOccurrence>, Vec<(String, String)>)> = files
         .par_iter()
@@ -46,7 +56,11 @@ pub fn index_files(root: &Path) -> SymbolIndex {
                     return None;
                 }
             };
-            Some(parse_file(path, &source))
+            match path.extension().and_then(|e| e.to_str()) {
+                Some("kt") => Some(parse_file(path, &source)),
+                Some("java") => Some(super::java_parser::parse_java_file(path, &source)),
+                _ => None,
+            }
         })
         .collect();
 
@@ -615,7 +629,7 @@ fn extract_references(
     }
 }
 
-fn resolve_reference(name: &str, package: Option<&str>, imports: &[ImportInfo]) -> Option<String> {
+pub(super) fn resolve_reference(name: &str, package: Option<&str>, imports: &[ImportInfo]) -> Option<String> {
     // Check explicit imports first
     for imp in imports {
         if imp.is_wildcard {
@@ -693,7 +707,7 @@ fn extract_receiver_from_nav(nav_node: &tree_sitter::Node, src: &[u8]) -> Option
     None
 }
 
-fn build_fqn(
+pub(super) fn build_fqn(
     package: Option<&str>,
     scope_tree: &ScopeTree,
     byte_offset: usize,
@@ -720,7 +734,7 @@ fn find_body_range(node: &tree_sitter::Node) -> Option<std::ops::Range<usize>> {
     None
 }
 
-fn find_child_name(node: &tree_sitter::Node, src: &[u8]) -> Option<String> {
+pub(super) fn find_child_name(node: &tree_sitter::Node, src: &[u8]) -> Option<String> {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "identifier"
@@ -798,7 +812,7 @@ fn has_keyword_child(node: &tree_sitter::Node, keyword: &str) -> bool {
     false
 }
 
-fn node_text<'a>(node: &tree_sitter::Node, src: &'a [u8]) -> &'a str {
+pub(super) fn node_text<'a>(node: &tree_sitter::Node, src: &'a [u8]) -> &'a str {
     node.utf8_text(src).unwrap_or("")
 }
 

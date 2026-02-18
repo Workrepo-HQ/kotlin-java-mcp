@@ -179,7 +179,7 @@ fn test_cli_indexing_progress_on_stderr() {
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     assert!(output.status.success());
-    assert!(stderr.contains("Indexing Kotlin files"), "Expected indexing progress on stderr: {}", stderr);
+    assert!(stderr.contains("Indexing Kotlin and Java files"), "Expected indexing progress on stderr: {}", stderr);
     assert!(stderr.contains("Indexed"), "Expected index stats on stderr: {}", stderr);
 }
 

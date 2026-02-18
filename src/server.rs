@@ -54,7 +54,7 @@ impl KotlinMcpServer {
     pub fn new(project_root: PathBuf) -> Self {
         let gradle_runner = Arc::new(GradleRunner::new(project_root.clone()));
 
-        info!("Indexing Kotlin files in {}", project_root.display());
+        info!("Indexing Kotlin and Java files in {}", project_root.display());
         let mut index = index_files(&project_root);
         cross_reference(&mut index);
         register_companion_aliases(&mut index);
@@ -68,7 +68,7 @@ impl KotlinMcpServer {
         }
     }
 
-    #[tool(description = "Find all usages/references of a Kotlin symbol across the project. Returns file locations, symbol kinds (call site, type reference, property reference, import), and fully qualified names. Use 'file' and 'line' parameters for precise resolution when the symbol name is ambiguous.")]
+    #[tool(description = "Find all usages/references of a Kotlin or Java symbol across the project. Returns file locations, symbol kinds (call site, type reference, property reference, import), and fully qualified names. Use 'file' and 'line' parameters for precise resolution when the symbol name is ambiguous.")]
     async fn find_usages(
         &self,
         Parameters(params): Parameters<FindUsagesParams>,
@@ -94,7 +94,7 @@ impl KotlinMcpServer {
         Ok(CallToolResult::success(vec![Content::text(output)]))
     }
 
-    #[tool(description = "Find the definition/declaration of a Kotlin symbol. Returns the file location and declaration kind (class, interface, function, property, etc.). Use 'file' and 'line' parameters when calling from a specific reference location for precise resolution.")]
+    #[tool(description = "Find the definition/declaration of a Kotlin or Java symbol. Returns the file location and declaration kind (class, interface, function, property, etc.). Use 'file' and 'line' parameters when calling from a specific reference location for precise resolution.")]
     async fn find_definition(
         &self,
         Parameters(params): Parameters<FindDefinitionParams>,
@@ -137,7 +137,7 @@ impl KotlinMcpServer {
         }
     }
 
-    #[tool(description = "Re-index all Kotlin files in the project. Use this after making changes to the codebase to update the symbol index. Also invalidates the Gradle cache.")]
+    #[tool(description = "Re-index all Kotlin and Java files in the project. Use this after making changes to the codebase to update the symbol index. Also invalidates the Gradle cache.")]
     async fn reindex(&self) -> Result<CallToolResult, McpError> {
         info!("Re-indexing project at {}", self.project_root.display());
 
@@ -173,7 +173,7 @@ impl ServerHandler for KotlinMcpServer {
                 website_url: None,
             },
             instructions: Some(
-                "Kotlin MCP server for code navigation. Indexes .kt files using tree-sitter \
+                "Kotlin MCP server for code navigation. Indexes .kt and .java files using tree-sitter \
                  and provides find_usages, find_definition, dependency_tree, and reindex tools."
                     .to_string(),
             ),

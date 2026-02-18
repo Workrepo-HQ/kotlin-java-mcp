@@ -154,7 +154,7 @@ fn build_index(project_root: &PathBuf) -> kotlin_java_mcp::indexer::SymbolIndex 
     use kotlin_java_mcp::indexer::parser::index_files;
     use kotlin_java_mcp::indexer::symbols::{cross_reference, register_companion_aliases};
 
-    eprintln!("Indexing Kotlin files in {} ...", project_root.display());
+    eprintln!("Indexing Kotlin and Java files in {} ...", project_root.display());
     let mut index = index_files(project_root);
     cross_reference(&mut index);
     register_companion_aliases(&mut index);
