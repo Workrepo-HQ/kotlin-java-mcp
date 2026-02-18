@@ -1,0 +1,42 @@
+name: Build macOS ARM binary
+
+on:
+  push:
+    branches: [master]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add aarch64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Run tests
+        run: cargo test --release --target aarch64-apple-darwin
+
+      - name: Package binary
+        run: |
+          cd target/aarch64-apple-darwin/release
+          tar czf ../../../kotlin-java-mcp-macos-arm64.tar.gz kotlin-java-mcp
+
+      - name: Upload release asset
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: kotlin-java-mcp-macos-arm64.tar.gz
