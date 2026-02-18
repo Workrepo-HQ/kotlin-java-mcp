@@ -3,6 +3,10 @@ name = "kotlin-java-mcp"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "kotlin-java-mcp"
+path = "src/main.rs"
+
 [dependencies]
 rmcp = { version = "0.15", features = ["server", "macros", "transport-io"] }
 tokio = { version = "1", features = ["full"] }
