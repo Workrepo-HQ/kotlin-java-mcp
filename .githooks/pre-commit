@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+ALLOWED_EMAILS=(
+  "jhby1@users.noreply.github.com"
+  "5601842+jhby1@users.noreply.github.com"
+)
+
+EMAIL=$(git config user.email)
+
+for allowed in "${ALLOWED_EMAILS[@]}"; do
+  if [ "$EMAIL" = "$allowed" ]; then
+    exit 0
+  fi
+done
+
+echo "ERROR: Git email '$EMAIL' is not in the allowed list."
+echo "Allowed emails:"
+for allowed in "${ALLOWED_EMAILS[@]}"; do
+  echo "  - $allowed"
+done
+echo ""
+echo "Fix with: git config user.email \"jhby1@users.noreply.github.com\""
+exit 1
