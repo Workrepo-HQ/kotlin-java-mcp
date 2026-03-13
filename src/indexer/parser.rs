@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rayon::prelude::*;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 use walkdir::WalkDir;
 
 use super::scope::ScopeTree;
@@ -46,6 +47,9 @@ pub fn index_files(root: &Path) -> SymbolIndex {
     let files = discover_source_files(root);
     debug!("Discovered {} source files", files.len());
 
+    let total = files.len();
+    let processed = AtomicUsize::new(0);
+
     let file_results: Vec<(FileInfo, Vec<SymbolOccurrence>, Vec<(String, String)>, Vec<(String, Vec<String>)>)> = files
         .par_iter()
         .filter_map(|path| {
@@ -56,13 +60,30 @@ pub fn index_files(root: &Path) -> SymbolIndex {
                     return None;
                 }
             };
-            match path.extension().and_then(|e| e.to_str()) {
+            let result = match path.extension().and_then(|e| e.to_str()) {
                 Some("kt") => {
-                    let (fi, occs, ta) = parse_file(path, &source);
-                    Some((fi, occs, ta, vec![]))
+                    std::panic::catch_unwind(|| {
+                        let (fi, occs, ta) = parse_file(path, &source);
+                        (fi, occs, ta, vec![])
+                    })
                 }
-                Some("java") => Some(super::java_parser::parse_java_file(path, &source)),
-                _ => None,
+                Some("java") => {
+                    std::panic::catch_unwind(|| {
+                        super::java_parser::parse_java_file(path, &source)
+                    })
+                }
+                _ => return None,
+            };
+            let count = processed.fetch_add(1, Ordering::Relaxed) + 1;
+            if count % 500 == 0 || count == total {
+                info!("Indexed {}/{} files", count, total);
+            }
+            match result {
+                Ok(parsed) => Some(parsed),
+                Err(_) => {
+                    warn!("Failed to parse (panic): {}", path.display());
+                    None
+                }
             }
         })
         .collect();
