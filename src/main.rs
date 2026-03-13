@@ -8,7 +8,7 @@ use tracing_subscriber::EnvFilter;
 #[command(name = "kotlin-java-mcp", version, about = "Kotlin code navigation — MCP server and CLI")]
 struct Args {
     /// Root directory of the Kotlin project to index
-    #[arg(short, long, default_value = ".")]
+    #[arg(short, long, alias = "project-root", default_value = ".")]
     project: PathBuf,
 
     #[command(subcommand)]
