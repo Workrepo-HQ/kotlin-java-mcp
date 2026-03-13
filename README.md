@@ -1,6 +1,6 @@
 # kotlin-java-mcp
 
-A fast MCP (Model Context Protocol) server that helps AI assistants understand Kotlin codebases. Built in Rust with tree-sitter parsing.
+A fast MCP (Model Context Protocol) server that helps AI assistants understand Kotlin and Java codebases. Built in Rust with tree-sitter parsing.
 
 ## What it does
 
@@ -13,7 +13,7 @@ kotlin-java-mcp indexes your Kotlin project and exposes tools over MCP that answ
 | `find_usages` | Find all references to a symbol across the project. Handles qualified names, imports, extension functions, companion objects, and type aliases. |
 | `find_definition` | Find where a symbol is declared. Resolves through imports to the actual source location. |
 | `dependency_tree` | Show the Gradle module dependency graph and external library dependencies. |
-| `reindex` | Re-scan all Kotlin files after changes. |
+| `reindex` | Re-scan all Kotlin and Java files after changes. |
 
 ## How it works
 

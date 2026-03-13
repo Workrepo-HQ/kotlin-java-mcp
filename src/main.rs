@@ -8,7 +8,7 @@ use tracing_subscriber::EnvFilter;
 #[command(name = "kotlin-java-mcp", version, about = "Kotlin code navigation — MCP server and CLI")]
 struct Args {
     /// Root directory of the Kotlin project to index
-    #[arg(short, long, default_value = ".")]
+    #[arg(short, long, alias = "project-root", default_value = ".")]
     project: PathBuf,
 
     #[command(subcommand)]
@@ -94,8 +94,16 @@ async fn run_server(project_root: PathBuf) -> anyhow::Result<()> {
     tracing::info!("Starting kotlin-java-mcp server for {}", project_root.display());
 
     let server = kotlin_java_mcp::server::KotlinMcpServer::new(project_root);
-    let service = server.serve(rmcp::transport::stdio()).await?;
-    service.waiting().await?;
+    let service = match server.serve(rmcp::transport::stdio()).await {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("MCP connection failed during initialization: {e}");
+            return Ok(());
+        }
+    };
+    if let Err(e) = service.waiting().await {
+        tracing::warn!("MCP connection closed: {e}");
+    }
 
     Ok(())
 }
